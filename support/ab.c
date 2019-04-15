@@ -1713,7 +1713,7 @@ read_more:
             }
             c->gotheader = 1;
             *s = 0;     /* terminate at end of header */
-            if (keepalive && xstrcasestr(c->cbuff, "Keep-Alive")) {
+            if (keepalive /* && xstrcasestr(c->cbuff, "Keep-Alive") */) {
                 char *cl;
                 c->keepalive = 1;
                 cl = xstrcasestr(c->cbuff, "Content-Length:");
@@ -1836,7 +1836,7 @@ static void test(void)
     /* add default headers if necessary */
     if (!opt_host) {
         /* Host: header not overridden, add default value to hdrs */
-        hdrs = apr_pstrcat(cntxt, hdrs, "Host: ", host_field, colonhost, "\r\n", NULL);
+        /* hdrs = apr_pstrcat(cntxt, hdrs, "Host: ", host_field, colonhost, "\r\n", NULL); */
     }
     else {
         /* Header overridden, no need to add, as it is already in hdrs */
@@ -1856,7 +1856,7 @@ static void test(void)
 
     if (!opt_useragent) {
         /* User-Agent: header not overridden, add default value to hdrs */
-        hdrs = apr_pstrcat(cntxt, hdrs, "User-Agent: ApacheBench/", AP_AB_BASEREVISION, "\r\n", NULL);
+        /* hdrs = apr_pstrcat(cntxt, hdrs, "User-Agent: ApacheBench/", AP_AB_BASEREVISION, "\r\n", NULL); */
     }
     else {
         /* Header overridden, no need to add, as it is already in hdrs */
@@ -1864,7 +1864,7 @@ static void test(void)
 
     if (!opt_accept) {
         /* Accept: header not overridden, add default value to hdrs */
-        hdrs = apr_pstrcat(cntxt, hdrs, "Accept: */*\r\n", NULL);
+        /* hdrs = apr_pstrcat(cntxt, hdrs, "Accept: *\/\*\r\n", NULL); */
     }
     else {
         /* Header overridden, no need to add, as it is already in hdrs */
@@ -1878,7 +1878,8 @@ static void test(void)
             "%s" "\r\n",
             method_str[method],
             (isproxy) ? fullurl : path,
-            keepalive ? "Connection: Keep-Alive\r\n" : "",
+            keepalive ? "" : "",
+            /* keepalive ? "Connection: Keep-Alive\r\n" : "", */
             cookie, auth, hdrs);
     }
     else {
