@@ -278,6 +278,7 @@ struct data {
 #define ap_min(a,b) (((a)<(b))?(a):(b))
 #define ap_max(a,b) (((a)>(b))?(a):(b))
 #define ap_round_ms(a) ((apr_time_t)((a) + 500)/1000)
+#define ap_round_us(a) (apr_time_t)(a)
 #define ap_double_ms(a) ((double)(a)/1000.0)
 #define MAX_CONCURRENCY 20000
 
@@ -1148,16 +1149,16 @@ static void output_results(int sig)
 
         /* Sorted on total connect times */
         if (percentile && (done > 1)) {
-            printf("\nPercentage of the requests served within a certain time (ms)\n");
+            printf("\nPercentage of the requests served within a certain time (us)\n");
             for (i = 0; i < sizeof(percs) / sizeof(int); i++) {
                 if (percs[i] <= 0)
                     printf(" 0%%  <0> (never)\n");
                 else if (percs[i] >= 100)
-                    printf(" 100%%  %5" APR_TIME_T_FMT " (longest request)\n",
-                           ap_round_ms(stats[done - 1].time));
+                    printf(" 100%%  %5.2" APR_TIME_T_FMT " (longest request)\n",
+                           ap_round_us(stats[done - 1].time));
                 else
-                    printf("  %d%%  %5" APR_TIME_T_FMT "\n", percs[i],
-                           ap_round_ms(stats[(unsigned long)done * percs[i] / 100].time));
+                    printf("  %d%%  %5.2" APR_TIME_T_FMT "\n", percs[i],
+                           ap_round_us(stats[(unsigned long)done * percs[i] / 100].time));
             }
         }
         if (csvperc) {
