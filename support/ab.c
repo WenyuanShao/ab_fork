@@ -396,6 +396,60 @@ apr_xlate_t *from_ascii, *to_ascii;
 static void write_request(struct connection * c);
 static void close_connection(struct connection * c);
 
+/* ----------------------- rate limit ------------------ */
+#define CPU_FREQ 2400 /* cycles per us */
+
+struct quantum {
+    unsigned long last;  /* last quantum number for which a request was successfully sent */
+    unsigned long limit; /* requests per second */
+    unsigned long start; /* global start time */
+    unsigned long size;  /* quantum size in cycles */
+};
+
+struct quantum global_limitor;
+unsigned long send_rate_limit = 0;
+
+static inline uint64_t
+ps_tsc(void)
+{
+    unsigned long a, d, c;
+
+    __asm__ __volatile__("rdtsc" : "=a" (a), "=d" (d), "=c" (c) : : );
+
+    return ((uint64_t)d << 32) | (uint64_t)a;
+}
+
+static void
+quantum_init(struct quantum *q, unsigned long limit)
+{
+    memset(q, 0, sizeof(struct quantum));
+    q->limit = limit;
+    if (limit > 0) {
+        q->size = 1000000 / limit * CPU_FREQ;
+    }
+}
+
+static void
+quantum_start(struct quantum *q)
+{
+    q->last  = 1;
+    q->start = ps_tsc();
+}
+
+static void
+quantum_wait(struct quantum *q)
+{
+    unsigned long cur;
+    int num;
+
+    if (q->limit == 0) return ;
+    do {
+        cur = ps_tsc();
+        num = (cur - q->start) / q->size;
+    } while (q->last >= num);
+    q->last++;
+}
+
 /* --------------------------------------------------------- */
 
 /* simple little function to write an error string and exit */
@@ -1770,6 +1824,7 @@ read_more:
             s->ctime     = ap_max(0, c->connect - c->start);
             s->time      = ap_max(0, c->done - c->start);
             s->waittime  = ap_max(0, c->beginread - c->endwrite);
+	    quantum_wait(&global_limitor);
             if (heartbeatres && !(done % heartbeatres)) {
                 fprintf(stderr, "Completed %d requests\n", done);
                 fflush(stderr);
@@ -1962,6 +2017,7 @@ static void test(void)
 
     /* initialise first connection to determine destination socket address
      * which should be used for next connections. */
+    quantum_start(&global_limitor);
     con[0].socknum = 0;
     start_connect(&con[0]);
 
@@ -2120,6 +2176,7 @@ static void usage(const char *progname)
     fprintf(stderr, "    -B address      Address to bind to when making outgoing connections\n");
     fprintf(stderr, "    -p postfile     File containing data to POST. Remember also to set -T\n");
     fprintf(stderr, "    -D client port  Set the port which ab uses to send packets\n");
+    fprintf(stderr, "    -R rate limit   Set the max number of requests send per second\n");
     fprintf(stderr, "    -u putfile      File containing data to PUT. Remember also to set -T\n");
     fprintf(stderr, "    -T content-type Content-type header to use for POST/PUT data, eg.\n");
     fprintf(stderr, "                    'application/x-www-form-urlencoded'\n");
@@ -2344,7 +2401,7 @@ int main(int argc, const char * const argv[])
     myhost = NULL; /* 0.0.0.0 or :: */
 
     apr_getopt_init(&opt, cntxt, argc, argv);
-    while ((status = apr_getopt(opt, "n:c:t:s:b:T:p:D:u:v:lrkVhwiIx:y:z:C:H:P:A:g:X:de:SqB:m:"
+    while ((status = apr_getopt(opt, "n:c:t:s:b:T:p:D:R:u:v:lrkVhwiIx:y:z:C:H:P:A:g:X:de:SqB:m:"
 #ifdef USE_SSL
             "Z:f:E:"
 #endif
@@ -2397,10 +2454,13 @@ int main(int argc, const char * const argv[])
                 method = POST;
                 send_body = 1;
                 break;
-			case 'D':
-				myhost = apr_pstrdup(cntxt,"0.0.0.0");
-				client_port = atoi(opt_arg);
-				break;
+	    case 'D':
+		myhost = apr_pstrdup(cntxt,"0.0.0.0");
+		client_port = atoi(opt_arg);
+		break;
+	    case 'R':
+		send_rate_limit = (unsigned long)atoi(opt_arg);
+		break;
             case 'u':
                 if (method != NO_METH)
                     err("Cannot mix PUT with other methods\n");
@@ -2646,7 +2706,7 @@ int main(int argc, const char * const argv[])
     SSL_library_init();
     bio_out=BIO_new_fp(stdout,BIO_NOCLOSE);
     bio_err=BIO_new_fp(stderr,BIO_NOCLOSE);
-
+    quantum_init(&global_limitor, send_rate_limit);
     if (!(ssl_ctx = SSL_CTX_new(meth))) {
         BIO_printf(bio_err, "Could not initialize SSL Context.\n");
         ERR_print_errors(bio_err);
