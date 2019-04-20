@@ -441,12 +441,22 @@ quantum_wait(struct quantum *q)
 {
     unsigned long cur;
     int num;
+    struct timespec ts = {0, 0};
 
     if (q->limit == 0) return ;
+    cur = ps_tsc();
+    num = (cur - q->start) / q->size;
+    if (q->last < num) goto ret ;
+    ts.tv_nsec = (q->last+1)*q->size + q->start - cur;
+    if (ts.tv_nsec >= 3*CPU_FREQ) {
+        ts.tv_nsec = ts.tv_nsec*1000/CPU_FREQ;
+	nanosleep(&ts, NULL);   
+    }
     do {
         cur = ps_tsc();
         num = (cur - q->start) / q->size;
     } while (q->last >= num);
+ret:
     q->last++;
 }
 
